@@ -1,0 +1,8 @@
+__pycache__/
+*.mp4
+*.avi
+*.mkv
+*.png
+*.jpg
+*.jpeg
+frames/

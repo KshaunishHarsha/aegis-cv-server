@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: aegis-cv-server
+    env: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
