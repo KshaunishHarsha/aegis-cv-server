@@ -1,5 +1,5 @@
-flask
-opencv-python-headless
-numpy
-tensorflow
-gunicorn
+Flask==2.3.4
+flask-cors==3.0.10
+opencv-python-headless==4.8.1.78
+tensorflow==2.15.0
+numpy==1.27.0
