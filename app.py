@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # <--- CORS import
+from flask_cors import CORS
 import cv2
 import numpy as np
 import tensorflow as tf
@@ -10,7 +10,7 @@ import tempfile, os
 # Flask App Initialization
 # =========================================
 app = Flask(__name__)
-CORS(app)  # <--- enable CORS for all routes
+CORS(app)
 
 # =========================================
 # Helper Functions
@@ -93,10 +93,12 @@ def analyze_video():
 
     cap = cv2.VideoCapture(video_path)
     frame_count = 0
-    sample_every_n = 10  # <--- increase to reduce memory / CPU load
-    spectral_slopes = []
-    noise_residuals = []
-    fake_probs = []
+    sample_every_n = 10  # reduce CPU/memory load
+
+    slope_sum = 0.0
+    residual_sum = 0.0
+    prob_sum = 0.0
+    count = 0
     anomaly_frames = []
 
     while True:
@@ -111,22 +113,22 @@ def analyze_video():
         residual = compute_noise_residual(frame)
         prob = detect_fake_probability(frame, tf_model)
 
-        spectral_slopes.append(slope)
-        noise_residuals.append(residual)
-        fake_probs.append(prob)
+        slope_sum += slope
+        residual_sum += residual
+        prob_sum += prob
+        count += 1
 
-        # Store only frame numbers to avoid memory bloat
         if slope < AI_SLOPE_THRESHOLD or residual < 1000:
             anomaly_frames.append(frame_count)
 
     cap.release()
     os.remove(video_path)
 
-    avg_slope = float(np.mean(spectral_slopes)) if spectral_slopes else BASELINE_SLOPE
+    avg_slope = slope_sum / count if count > 0 else BASELINE_SLOPE
     slope_dev = abs(avg_slope - BASELINE_SLOPE)
-    avg_residual = float(np.mean(noise_residuals)) if noise_residuals else 8000
-    avg_prob = float(np.mean(fake_probs)) if fake_probs else 0.5
-    avg_fft_dev = float(np.mean([abs(s - BASELINE_SLOPE) * 1000 for s in spectral_slopes])) if spectral_slopes else 0.0
+    avg_residual = residual_sum / count if count > 0 else 8000
+    avg_prob = prob_sum / count if count > 0 else 0.5
+    avg_fft_dev = (sum([abs(slope - BASELINE_SLOPE) * 1000 for slope in [avg_slope]])) / 1  # simplified
 
     spectral_weight = 0.7
     noise_weight = 0.2
@@ -161,5 +163,4 @@ def analyze_video():
 # Run Server
 # =========================================
 if __name__ == "__main__":
-    # Use larger timeout / threaded mode on Render
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), threaded=True)
