@@ -10,7 +10,7 @@ import tempfile, os
 # Flask App Initialization
 # =========================================
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # enable CORS for all routes
 
 # =========================================
 # Helper Functions
@@ -49,12 +49,12 @@ def compute_noise_residual(frame):
 def build_tf_model():
     model = models.Sequential([
         layers.Input(shape=(128, 128, 1)),
+        layers.Conv2D(8, (3,3), activation='relu'),   # reduced filters to save memory
+        layers.MaxPooling2D((2,2)),
         layers.Conv2D(16, (3,3), activation='relu'),
         layers.MaxPooling2D((2,2)),
-        layers.Conv2D(32, (3,3), activation='relu'),
-        layers.MaxPooling2D((2,2)),
         layers.Flatten(),
-        layers.Dense(32, activation='relu'),
+        layers.Dense(16, activation='relu'),
         layers.Dense(1, activation='sigmoid')
     ])
     model.compile(optimizer='adam', loss='binary_crossentropy')
@@ -87,13 +87,14 @@ def analyze_video():
     if not file:
         return jsonify({"error": "No video file provided"}), 400
 
+    # Save temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
         file.save(tmp.name)
         video_path = tmp.name
 
     cap = cv2.VideoCapture(video_path)
     frame_count = 0
-    sample_every_n = 10  # reduce CPU/memory load
+    sample_every_n = 10  # configurable to reduce load
 
     slope_sum = 0.0
     residual_sum = 0.0
@@ -109,9 +110,12 @@ def analyze_video():
         if frame_count % sample_every_n != 0:
             continue
 
-        slope = compute_spectral_slope(frame)
-        residual = compute_noise_residual(frame)
-        prob = detect_fake_probability(frame, tf_model)
+        try:
+            slope = compute_spectral_slope(frame)
+            residual = compute_noise_residual(frame)
+            prob = detect_fake_probability(frame, tf_model)
+        except Exception:
+            continue  # skip problematic frames
 
         slope_sum += slope
         residual_sum += residual
@@ -128,8 +132,9 @@ def analyze_video():
     slope_dev = abs(avg_slope - BASELINE_SLOPE)
     avg_residual = residual_sum / count if count > 0 else 8000
     avg_prob = prob_sum / count if count > 0 else 0.5
-    avg_fft_dev = (sum([abs(slope - BASELINE_SLOPE) * 1000 for slope in [avg_slope]])) / 1  # simplified
+    avg_fft_dev = abs(avg_slope - BASELINE_SLOPE) * 1000
 
+    # Weighted scoring
     spectral_weight = 0.7
     noise_weight = 0.2
     cnn_weight = 0.1
@@ -140,7 +145,7 @@ def analyze_video():
     perceptual_score = round(max(0.0, min(perceptual_score, 1.0)), 4)
 
     explanation = (
-        f"The video’s spectral slope is {avg_slope:.2f}, compared to the baseline mean of {BASELINE_SLOPE:.2f}. "
+        f"The video’s spectral slope is {avg_slope:.2f}, compared to baseline {BASELINE_SLOPE:.2f}. "
         f"Slope deviation = {slope_dev:.2f}. Noise variance = {avg_residual:.2f}. "
         f"AI artifact probability (TensorFlow): {avg_prob:.2f}."
     )
